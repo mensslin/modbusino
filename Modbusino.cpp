@@ -1,13 +1,4 @@
-@@ -1,69 +1,70 @@
-/*
- * Copyright © 2011-2012 Stéphane Raimbault <stephane.raimbault@gmail.com>
- *
- * License ISC, see LICENSE for more details.
- *
- * This library implements the Modbus protocol.
- * http://libmodbus.org/
- *
- */
+
 #include <inttypes.h>
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
@@ -118,7 +109,7 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
 {
     uint8_t i;
     uint8_t length_to_read;
-@@ -148,9 +149,9 @@ static int receive(uint8_t *req, uint8_t _slave)
+
         /* The timeout is defined to ~10 ms between each bytes.  Precision is
            not that important so I rather to avoid millis() to apply the KISS
            principle (millis overflows after 50 days, etc) */
