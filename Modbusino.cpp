@@ -1,3 +1,4 @@
+@@ -1,69 +1,70 @@
 /*
  * Copyright © 2011-2012 Stéphane Raimbault <stephane.raimbault@gmail.com>
  *
@@ -7,9 +8,7 @@
  * http://libmodbus.org/
  *
  */
-
 #include <inttypes.h>
-
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
 #else
@@ -17,29 +16,22 @@
 #include <pins_arduino.h>
 #endif
 #include "Modbusino.h"
-
 #define _MODBUS_RTU_SLAVE 0
 #define _MODBUS_RTU_FUNCTION 1
 #define _MODBUS_RTU_PRESET_REQ_LENGTH 6
 #define _MODBUS_RTU_PRESET_RSP_LENGTH 2
-
 #define _MODBUS_RTU_CHECKSUM_LENGTH 2
-
 /* As reported in https://github.com/stephane/modbusino/issues/6, the code could
 segfault for longer ADU */
 #define _MODBUSINO_RTU_MAX_ADU_LENGTH 256
-
 /* Supported function codes */
 #define _FC_READ_HOLDING_REGISTERS 0x03
 #define _FC_WRITE_MULTIPLE_REGISTERS 0x10
-
 enum { _STEP_FUNCTION = 0x01, _STEP_META, _STEP_DATA };
-
 static uint16_t crc16(uint8_t *req, uint8_t req_length)
 {
     uint8_t j;
     uint16_t crc;
-
     crc = 0xFFFF;
     while (req_length--) {
         crc = crc ^ *req++;
@@ -50,10 +42,8 @@ static uint16_t crc16(uint8_t *req, uint8_t req_length)
                 crc = crc >> 1;
         }
     }
-
     return (crc << 8 | crc >> 8);
 }
-
 ModbusinoSlave::ModbusinoSlave(uint8_t slave)
 {
     if (slave >= 0 && slave <= 247) {
@@ -63,7 +53,8 @@ ModbusinoSlave::ModbusinoSlave(uint8_t slave)
 
 void ModbusinoSlave::setup(long baud, HardwareSerial* port)
 {
-       _port = port;
+    Serial.begin(baud);
+    _port = port;
     (*port).begin(baud);
 }
 
@@ -71,13 +62,10 @@ static int check_integrity(uint8_t *msg, uint8_t msg_length)
 {
     uint16_t crc_calculated;
     uint16_t crc_received;
-
     if (msg_length < 2)
         return -1;
-
     crc_calculated = crc16(msg, msg_length - 2);
     crc_received = (msg[msg_length - 2] << 8) | msg[msg_length - 1];
-
     /* Check CRC of msg */
     if (crc_calculated == crc_received) {
         return msg_length;
@@ -85,14 +73,13 @@ static int check_integrity(uint8_t *msg, uint8_t msg_length)
         return -1;
     }
 }
-
 static int build_response_basis(uint8_t slave, uint8_t function, uint8_t *rsp)
 {
     rsp[0] = slave;
     rsp[1] = function;
-
     return _MODBUS_RTU_PRESET_RSP_LENGTH;
 }
+
 static void send_msg(uint8_t *msg, uint8_t msg_length, Stream* _port)
 {
     uint16_t crc = crc16(msg, msg_length);
@@ -107,14 +94,12 @@ static uint8_t response_exception(uint8_t slave, uint8_t function,
                                   uint8_t exception_code, uint8_t *rsp)
 {
     uint8_t rsp_length;
-
     rsp_length = build_response_basis(slave, function + 0x80, rsp);
-
     /* Positive exception code */
     rsp[rsp_length++] = exception_code;
-
     return rsp_length;
 }
+
 
 static void flush(Stream* _port)
 {
@@ -122,7 +107,8 @@ static void flush(Stream* _port)
 
     /* Wait a moment to receive the remaining garbage but avoid getting stuck
      * because the line is saturated */
-while ((*_port).available() && i++ < 10) {
+
+    while ((*_port).available() && i++ < 10) {
         (*_port).flush(_port);
         delay(3);
     }
@@ -132,25 +118,15 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
 {
     uint8_t i;
     uint8_t length_to_read;
-    uint8_t req_index;
-    uint8_t step;
-    uint8_t function;
-
-    /* We need to analyse the message step by step.  At the first step, we want
-     * to reach the function code because all packets contain this
-     * information. */
-    step = _STEP_FUNCTION;
-    length_to_read = _MODBUS_RTU_FUNCTION + 1;
-
-    req_index = 0;
-    while (length_to_read != 0) {
-
+@@ -148,9 +149,9 @@ static int receive(uint8_t *req, uint8_t _slave)
         /* The timeout is defined to ~10 ms between each bytes.  Precision is
            not that important so I rather to avoid millis() to apply the KISS
            principle (millis overflows after 50 days, etc) */
-       if (!(*_port).available()) {
+        
+        if (!(*_port).available()) {
             i = 0;
-             while (!(*_port).available()) {
+            
+            while (!(*_port).available()) {
                 if (++i == 10) {
                     /* Too late, bye */
                     return -1 - MODBUS_INFORMATIVE_RX_TIMEOUT;
@@ -159,18 +135,18 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
             }
         }
 
+        
         req[req_index] = (*_port).read();
 
         /* Moves the pointer to receive other data */
         req_index++;
-
         /* Computes remaining bytes */
         length_to_read--;
-
         if (length_to_read == 0) {
             if (req[_MODBUS_RTU_SLAVE] != _slave
                 && req[_MODBUS_RTU_SLAVE != MODBUS_BROADCAST_ADDRESS]) {
-                 flush(_port);
+                
+                flush(_port);
                 return -1 - MODBUS_INFORMATIVE_NOT_FOR_US;
             }
 
@@ -184,13 +160,15 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
                     length_to_read = 5;
                 } else {
                     /* Wait a moment to receive the remaining garbage */
-                     flush(_port);
+                    
+                    flush(_port);
                     if (req[_MODBUS_RTU_SLAVE] == _slave
                         || req[_MODBUS_RTU_SLAVE] == MODBUS_BROADCAST_ADDRESS) {
                         /* It's for me so send an exception (reuse req) */
                         uint8_t rsp_length = response_exception(
                             _slave, function, MODBUS_EXCEPTION_ILLEGAL_FUNCTION,
                             req);
+                        
                         send_msg(req, rsp_length, _port);
                         return -1 - MODBUS_EXCEPTION_ILLEGAL_FUNCTION;
                     }
@@ -201,19 +179,20 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
                 break;
             case _STEP_META:
                 length_to_read = _MODBUS_RTU_CHECKSUM_LENGTH;
-
                 if (function == _FC_WRITE_MULTIPLE_REGISTERS)
                     length_to_read += req[_MODBUS_RTU_FUNCTION + 5];
 
                 if ((req_index + length_to_read)
                     > _MODBUSINO_RTU_MAX_ADU_LENGTH) {
-                     flush(_port);
+                  
+                    flush(_port);
                     if (req[_MODBUS_RTU_SLAVE] == _slave
                         || req[_MODBUS_RTU_SLAVE] == MODBUS_BROADCAST_ADDRESS) {
                         /* It's for me so send an exception (reuse req) */
                         uint8_t rsp_length = response_exception(
                             _slave, function,
                             MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE, req);
+                        
                         send_msg(req, rsp_length, _port);
                         return -1 - MODBUS_EXCEPTION_ILLEGAL_FUNCTION;
                     }
@@ -228,8 +207,6 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
     }
     return check_integrity(req, req_index);
 }
-
-
 static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
                   uint8_t req_length, uint8_t _slave)
 {
@@ -241,20 +218,16 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
         (req[_MODBUS_RTU_FUNCTION + 3] << 8) + req[_MODBUS_RTU_FUNCTION + 4];
     uint8_t rsp[_MODBUSINO_RTU_MAX_ADU_LENGTH];
     uint8_t rsp_length = 0;
-
     if (slave != _slave && slave != MODBUS_BROADCAST_ADDRESS) {
         return;
     }
-
     if (address + nb > nb_reg) {
         rsp_length = response_exception(
             slave, function, MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
     } else {
         req_length -= _MODBUS_RTU_CHECKSUM_LENGTH;
-
         if (function == _FC_READ_HOLDING_REGISTERS) {
             uint16_t i;
-
             rsp_length = build_response_basis(slave, function, rsp);
             rsp[rsp_length++] = nb << 1;
             for (i = address; i < address + nb; i++) {
@@ -263,13 +236,11 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
             }
         } else {
             uint16_t i, j;
-
             for (i = address, j = 6; i < address + nb; i++, j += 2) {
                 /* 6 and 7 = first value */
                 tab_reg[i] = (req[_MODBUS_RTU_FUNCTION + j] << 8)
                              + req[_MODBUS_RTU_FUNCTION + j + 1];
             }
-
             rsp_length = build_response_basis(slave, function, rsp);
             /* 4 to copy the address (2) and the no. of registers */
             memcpy(rsp + rsp_length, req + rsp_length, 4);
@@ -277,7 +248,8 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
         }
     }
 
-    send_msg(req, rsp_length, _port);
+    
+    send_msg(rsp, rsp_length, _port);
 }
 
 int ModbusinoSlave::loop(uint16_t *tab_reg, uint16_t nb_reg)
@@ -285,13 +257,13 @@ int ModbusinoSlave::loop(uint16_t *tab_reg, uint16_t nb_reg)
     int rc = 0;
     uint8_t req[_MODBUSINO_RTU_MAX_ADU_LENGTH];
 
+    
     if ((*_port).available()) {
         rc = receive(req, _slave);
         if (rc > 0) {
             reply(tab_reg, nb_reg, req, rc, _slave);
         }
     }
-
     /* Returns a positive value if successful,
        0 if a slave filtering has occured,
        -1 if an undefined error has occured,
