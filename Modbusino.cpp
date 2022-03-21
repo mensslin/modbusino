@@ -1,4 +1,12 @@
-
+/*
+ * Copyright © 2011-2012 Stéphane Raimbault <stephane.raimbault@gmail.com>
+ *
+ * License ISC, see LICENSE for more details.
+ *
+ * This library implements the Modbus protocol.
+ * http://libmodbus.org/
+ *
+ */
 #include <inttypes.h>
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
@@ -24,11 +32,9 @@ static uint16_t crc16(uint8_t *req, uint8_t req_length)
     uint8_t j;
     uint16_t crc;
     crc = 0xFFFF;
-    while (req_length--) 
-    {
+    while (req_length--) {
         crc = crc ^ *req++;
-        for (j = 0; j < 8; j++) 
-        {
+        for (j = 0; j < 8; j++) {
             if (crc & 0x0001)
                 crc = (crc >> 1) ^ 0xA001;
             else
@@ -37,20 +43,17 @@ static uint16_t crc16(uint8_t *req, uint8_t req_length)
     }
     return (crc << 8 | crc >> 8);
 }
+ModbusinoSlave::ModbusinoSlave() { }
 
-ModbusinoSlave::ModbusinoSlave(uint8_t slave)
+void ModbusinoSlave::setup(uint8_t slave, long baud, HardwareSerial* port)
 {
-    if (slave >= 0 && slave <= 247) 
-    {
+    if (slave >= 0 & slave <= 247) {
         _slave = slave;
     }
-}
-
-void ModbusinoSlave::setup(long baud, HardwareSerial* port)
-{
-    Serial.begin(baud);
     _port = port;
-    (*port).begin(baud);
+    if (baud >= 0) {
+        (*port).begin(baud);
+    }
 }
 
 static int check_integrity(uint8_t *msg, uint8_t msg_length)
@@ -62,8 +65,7 @@ static int check_integrity(uint8_t *msg, uint8_t msg_length)
     crc_calculated = crc16(msg, msg_length - 2);
     crc_received = (msg[msg_length - 2] << 8) | msg[msg_length - 1];
     /* Check CRC of msg */
-    if (crc_calculated == crc_received) 
-    {
+    if (crc_calculated == crc_received) {
         return msg_length;
     } else {
         return -1;
@@ -78,18 +80,15 @@ static int build_response_basis(uint8_t slave, uint8_t function, uint8_t *rsp)
 }
 
 static void send_msg(uint8_t *msg, uint8_t msg_length, Stream* _port)
-    
 {
     uint16_t crc = crc16(msg, msg_length);
 
     msg[msg_length++] = crc >> 8;
     msg[msg_length++] = crc & 0x00FF;
-
-    (*_port).write(msg, msg_length);
+        (*_port).write(msg, msg_length);
 }
 
-static uint8_t response_exception(uint8_t slave, uint8_t function,
-                                  uint8_t exception_code, uint8_t *rsp)
+static uint8_t response_exception(uint8_t slave, uint8_t function, uint8_t exception_code, uint8_t *rsp)
 {
     uint8_t rsp_length;
     rsp_length = build_response_basis(slave, function + 0x80, rsp);
@@ -98,17 +97,14 @@ static uint8_t response_exception(uint8_t slave, uint8_t function,
     return rsp_length;
 }
 
-
 static void flush(Stream* _port)
 {
     uint8_t i = 0;
 
     /* Wait a moment to receive the remaining garbage but avoid getting stuck
      * because the line is saturated */
-
-    while ((*_port).available() && i++ < 10) 
-    {
-        (*_port).flush(_port);
+    while ((*_port).available() && i++ < 10) {
+        (*_port).flush();
         delay(3);
     }
 }
@@ -120,32 +116,26 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
     uint8_t req_index;
     uint8_t step;
     uint8_t function;
-
     /* We need to analyse the message step by step.  At the first step, we want
      * to reach the function code because all packets contain this
      * information. */
     step = _STEP_FUNCTION;
     length_to_read = _MODBUS_RTU_FUNCTION + 1;
-
     req_index = 0;
-    while (length_to_read != 0) 
-    {
-        
-        if (!(*_port).available()) 
-        {
+    while (length_to_read != 0) {
+        /* The timeout is defined to ~10 ms between each bytes.  Precision is
+           not that important so I rather to avoid millis() to apply the KISS
+           principle (millis overflows after 50 days, etc) */
+        if (!(*_port).available()) {
             i = 0;
-            
-            while (!(*_port).available()) 
-            {
-                if (++i == 10) 
-                {
-                    /* Too late, bye */
-                    return -1 - MODBUS_INFORMATIVE_RX_TIMEOUT;
-                }
-                delay(1);
-            }
-        }
-
+            while (!(*_port).available()) {
+               if (++i == 10) {
+                   /* Too late, bye */
+                   return -1 - MODBUS_INFORMATIVE_RX_TIMEOUT;
+               }
+               delay(1);
+           }
+       }
         
         req[req_index] = (*_port).read();
 
@@ -153,40 +143,28 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
         req_index++;
         /* Computes remaining bytes */
         length_to_read--;
-        if (length_to_read == 0) 
-        {
+        if (length_to_read == 0) {
             if (req[_MODBUS_RTU_SLAVE] != _slave
-                && req[_MODBUS_RTU_SLAVE != MODBUS_BROADCAST_ADDRESS]) 
-            {
-                
+                && req[_MODBUS_RTU_SLAVE != MODBUS_BROADCAST_ADDRESS]) {
                 flush(_port);
                 return -1 - MODBUS_INFORMATIVE_NOT_FOR_US;
             }
 
-            switch (step) 
-            {
+            switch (step) {
             case _STEP_FUNCTION:
                 /* Function code position */
                 function = req[_MODBUS_RTU_FUNCTION];
-                if (function == _FC_READ_HOLDING_REGISTERS) 
-                {
+                if (function == _FC_READ_HOLDING_REGISTERS) {
                     length_to_read = 4;
-                } else if (function == _FC_WRITE_MULTIPLE_REGISTERS) 
-                {
+                } else if (function == _FC_WRITE_MULTIPLE_REGISTERS) {
                     length_to_read = 5;
-                } else 
-                {
+                } else {
                     /* Wait a moment to receive the remaining garbage */
-                    
-                    flush(_port);
+                     flush(_port);
                     if (req[_MODBUS_RTU_SLAVE] == _slave
-                        || req[_MODBUS_RTU_SLAVE] == MODBUS_BROADCAST_ADDRESS) ,
-                    {
+                        || req[_MODBUS_RTU_SLAVE] == MODBUS_BROADCAST_ADDRESS) {
                         /* It's for me so send an exception (reuse req) */
-                        uint8_t rsp_length = response_exception(
-                            _slave, function, MODBUS_EXCEPTION_ILLEGAL_FUNCTION,
-                            req);
-                        
+                        uint8_t rsp_length = response_exception (_slave, function, MODBUS_EXCEPTION_ILLEGAL_FUNCTION, req);
                         send_msg(req, rsp_length, _port);
                         return -1 - MODBUS_EXCEPTION_ILLEGAL_FUNCTION;
                     }
@@ -201,18 +179,12 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
                     length_to_read += req[_MODBUS_RTU_FUNCTION + 5];
 
                 if ((req_index + length_to_read)
-                    > _MODBUSINO_RTU_MAX_ADU_LENGTH) 
-                {
-                  
+                    > _MODBUSINO_RTU_MAX_ADU_LENGTH) {
                     flush(_port);
                     if (req[_MODBUS_RTU_SLAVE] == _slave
-                        || req[_MODBUS_RTU_SLAVE] == MODBUS_BROADCAST_ADDRESS) 
-                    {
+                        || req[_MODBUS_RTU_SLAVE] == MODBUS_BROADCAST_ADDRESS) {
                         /* It's for me so send an exception (reuse req) */
-                        uint8_t rsp_length = response_exception(
-                            _slave, function,
-                            MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE, req);
-                        
+                        uint8_t rsp_length = response_exception(_slave, function, MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE, req);
                         send_msg(req, rsp_length, _port);
                         return -1 - MODBUS_EXCEPTION_ILLEGAL_FUNCTION;
                     }
@@ -228,9 +200,9 @@ static int receive(uint8_t *req, uint8_t _slave, Stream* _port)
     return check_integrity(req, req_index);
 }
 
-static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
-                  uint8_t req_length, uint8_t _slave)
+static uint32_t reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req, uint8_t req_length, uint8_t _slave, Stream* _port)
 {
+    uint32_t backnum = 0;
     uint8_t slave = req[_MODBUS_RTU_SLAVE];
     uint8_t function = req[_MODBUS_RTU_FUNCTION];
     uint16_t address =
@@ -239,14 +211,16 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
         (req[_MODBUS_RTU_FUNCTION + 3] << 8) + req[_MODBUS_RTU_FUNCTION + 4];
     uint8_t rsp[_MODBUSINO_RTU_MAX_ADU_LENGTH];
     uint8_t rsp_length = 0;
+
     if (slave != _slave && slave != MODBUS_BROADCAST_ADDRESS) {
-        return;
+          return backnum;
     }
+
     if (address + nb > nb_reg) {
-        rsp_length = response_exception(
-            slave, function, MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
+         rsp_length = response_exception(slave, function, MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
     } else {
         req_length -= _MODBUS_RTU_CHECKSUM_LENGTH;
+
         if (function == _FC_READ_HOLDING_REGISTERS) {
             uint16_t i;
             rsp_length = build_response_basis(slave, function, rsp);
@@ -256,8 +230,10 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
                 rsp[rsp_length++] = tab_reg[i] & 0xFF;
             }
         } else {
-            uint16_t i, j;
-            for (i = address, j = 6; i < address + nb; i++, j += 2) {
+            
+        uint16_t i, j;
+
+        for (i = address, j = 6; i < address + nb; i++, j += 2) {
                 /* 6 and 7 = first value */
                 tab_reg[i] = (req[_MODBUS_RTU_FUNCTION + j] << 8)
                              + req[_MODBUS_RTU_FUNCTION + j + 1];
@@ -268,27 +244,30 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
             rsp_length += 4;
         }
     }
-
     
-    send_msg(rsp, rsp_length, _port);
+     send_msg(rsp, rsp_length, _port);
+
+    return backnum;
 }
 
 int ModbusinoSlave::loop(uint16_t *tab_reg, uint16_t nb_reg)
 {
     int rc = 0;
     uint8_t req[_MODBUSINO_RTU_MAX_ADU_LENGTH];
-
+    uint32_t b = 0;
     
-    if ((*_port).available()) {
-        rc = receive(req, _slave);
+     if ((*_port).available()) {
+        rc = receive(req, _slave, _port);
         if (rc > 0) {
-            reply(tab_reg, nb_reg, req, rc, _slave);
+             b = reply(tab_reg, nb_reg, req, rc, _slave, _port);
         }
     }
+
     /* Returns a positive value if successful,
        0 if a slave filtering has occured,
        -1 if an undefined error has occured,
        -2 for MODBUS_EXCEPTION_ILLEGAL_FUNCTION
        etc */
-    return rc;
+    return b;
 }
+   
