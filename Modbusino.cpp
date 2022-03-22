@@ -268,6 +268,7 @@ int ModbusinoSlave::loop(uint16_t *tab_reg, uint16_t nb_reg)
        -1 if an undefined error has occured,
        -2 for MODBUS_EXCEPTION_ILLEGAL_FUNCTION
        etc */
+    delay(1000);
     return b;
 }
    
